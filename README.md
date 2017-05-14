@@ -57,7 +57,11 @@ iptables (1.3+)
 3. Download ipBLOCKer Instructions
 
    mkdir -P ipBLOCKer; cd ipBLOCKer;
-   curl git-url
+  
+   curl -S -# -O https://raw.githubusercontent.com/spalife/ipBLOCKer/master/ipBLOCKer.sh;
+   curl -S -# -O https://raw.githubusercontent.com/spalife/ipBLOCKer/master/includes_ipBLOCKer.sh;
+   curl -S -# -O https://raw.githubusercontent.com/spalife/ipBLOCKer/master/flib_ipBLOCKer.sh;
+  
    chmod +x *.sh;
    ./ipBLOCKer.sh setup
    ( now select categories to block )
