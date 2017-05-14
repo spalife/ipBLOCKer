@@ -4,9 +4,9 @@ Category blocking using
 iptables and ipsets
 
 Blocks IPs & CIDR's tagged as 
-ADWARE COUNTRY CUSTOM ETF
-MALWARE SHALLA(exp) SPAM
-TOR-EXITS
+Adware Country Custom ETF
+Malware Shalla(exp) Spam
+Tor-Exits
 ```
 #### :: Features ::
 ```
@@ -231,8 +231,8 @@ Tor-Exits - Daily at 10:30
 #### :: FAQ ::
 **Why the caps in filename ?**
 ```
-Given a hammer
-.... everything looks like a nail ....
+Given a hammer .... 
+.... everything looks like a nail 
 (says the old one)
 
 Every path leads to the ether ....
