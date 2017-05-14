@@ -1,6 +1,13 @@
 # :: ipBLOCKer ::
-Category blocking using iptables and ipsets
+```
+Category blocking using 
+iptables and ipsets
 
+Blocks IPs & CIDR's tagged as 
+ADWARE COUNTRY CUSTOM ETF
+MALWARE SHALLA(exp) SPAM
+TOR-EXITS
+```
 #### :: Features ::
 ```
 - Command Line Driven with Menu
