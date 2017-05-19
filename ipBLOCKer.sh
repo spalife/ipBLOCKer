@@ -14,22 +14,26 @@ shopt -s extglob
 shopt -u huponexit
 
 IPBLOCKER_DIR="${IPBLOCKER_DIR:-$PWD}"; IPBLOCKER_DIR="${IPBLOCKER_DIR%/}";
-[ ! -f $IPBLOCKER_DIR/includes_ipBLOCKer.sh ]          && \
+[ ! -f "$IPBLOCKER_DIR/includes_ipBLOCKer.sh" ]          && \
 { echo "ABORT: includes_ipBLOCKer.sh file not found. Exiting ...."; exit 3; } || \
-source $IPBLOCKER_DIR/includes_ipBLOCKer.sh
+source "$IPBLOCKER_DIR/includes_ipBLOCKer.sh"
 
-[ ! -f $IPBLOCKER_DIR/flib_ipBLOCKer.sh ] && \
+[ ! -f "$IPBLOCKER_DIR/flib_ipBLOCKer.sh" ] && \
 { echo "ABORT: flib_ipBLOCKer.sh file not found. Exiting ....";     exit 3; } || \
-source $IPBLOCKER_DIR/flib_ipBLOCKer.sh;
+source "$IPBLOCKER_DIR/flib_ipBLOCKer.sh";
 
-[ -f $IPBLOCKER_CONFIG ] && source $IPBLOCKER_CONFIG
+[ -f "$IPBLOCKER_CONFIG" ] && source "$IPBLOCKER_CONFIG"
+
+[ $# -gt $MAX_PARAMS ]     && { echo -e "ERROR: $APP_BANNER too many parameters"; echo; exit 1; }
 
 # 0 = OFF 1 = ON
-option1="${1:-}"     option2="${2:-}"
+option1="${1:-}"
+option2="${2:-}"
 optHelp=$OFF   optCheck=$OFF     optSetup=$OFF     optStatus=$OFF optRefresh=$OFF
 optCustom=$OFF optWhiteList=$OFF optUninstall=$OFF optAdd=$OFF    optDelete=$OFF
 optBackup=$OFF optRestore=$OFF   optVersion=$OFF
 optOff=$OFF    optOn=$OFF        optSynch=$OFF
+optSynchAll=$OFF
 selectedCategory="" reply="" lst=""
 SYSTEM_MAX_ENTRIES=$MAX_ENTRIES*$MAX_BUCKETS
 
@@ -48,21 +52,22 @@ usage ()
     echo "   Ex: $prgName status; $prgName refresh; $prgName add white-list;"
     echo "   Ex:        $ALIAS_NAME status;        $ALIAS_NAME refresh;        $ALIAS_NAME add white-list;"
     echo
-    echo "   Options:"
-    echo "     help : Shows      this help"
-    echo "    setup : Configures ipBLOCKer"
-    echo "   status : Shows      Status"
-    echo "  refresh : Refreshes  Categories with Updates"
-    echo "      add : Adds       IPs and CIDRs to     a Category"
-    echo "   delete : Deletes    IPs and CIDRs from   a Category"
-    echo "    check : Checks     IPs and CIDRs are in a Category"
-    echo "   backup : Backsup    System"
-    echo "  restore : Restores   System from backup"
-    echo "      off : Turns      off ipBLOCKer Temporarily"
-    echo "       on : Turns      on ipBLOCKer"
-    echo "    synch : Restores   Missing ipBLOCKer Firewall Rules (trouble-shooting)"
-    echo "uninstall : Removes    ipBLOCKer (all) or a Category"
-    echo "  version : Shows      Version Information"
+    echo "    Options:"
+    echo "      help : Shows      this help"
+    echo "     setup : Configures ipBLOCKer"
+    echo "    status : Shows      Status"
+    echo "   refresh : Refreshes  Categories with Updates"
+    echo "       add : Adds       IPs and CIDRs to     a Category"
+    echo "    delete : Deletes    IPs and CIDRs from   a Category"
+    echo "     check : Checks     IPs and CIDRs are blocked by ipBLOCKer"
+    echo "    backup : Backsup    System"
+    echo "   restore : Restores   System from backup"
+    echo "       off : Turns      OFF ipBLOCKer temporarily"
+    echo "        on : Turns      ON ipBLOCKer"
+    echo "     synch : Restores   Missing ipBLOCKer Firewall rules      (trouble-shooting)"
+    echo " synch_all : Restores   Firewall and Buckets from saved state (trouble-shooting)"
+    echo " uninstall : Removes    ipBLOCKer (all) or a Category"
+    echo "   version : Shows      Version Information"
     echo
 }
 
@@ -92,7 +97,7 @@ refresh    ()
   #log "Refresh $CATEGORIES_TAG: Started"
   EXIT_CODE=$EXIT_NORMAL
 
-  [ -z "$option2" ] && cli_select_category || selectedCategory=$option2
+  [ -z "$option2" ] && cli_select_category "Refresh Menu" || selectedCategory=$option2
   case $selectedCategory in
        "$NONE") return $EXIT_CODE
                 ;;
@@ -130,10 +135,11 @@ custom_or_white_list    ()
 # Add User specified IP's & CIDR's to a category
 add_delete ()
 {
-  local addDel=$1;  [ $addDel -eq 1 ] && SHOW_ALL=$OFF
+  local menuT="Delete from"
+  local addDel="${1:-}";  [ $addDel -eq 1 ] && { SHOW_ALL=$OFF; menuT="Add to"; }
   EXIT_CODE=$EXIT_NORMAL
 
-  [ -z "$option2" ] && cli_select_category || selectedCategory=$option2
+  [ -z "$option2" ] && cli_select_category "$menuT a Category Menu" || selectedCategory=$option2
 
   [ "$selectedCategory" == "$NONE" ] && return $EXIT_CODE
   is_valid_category   $selectedCategory; [ $EXIT_CODE -ne $EXIT_NORMAL ] && return $EXIT_CODE
@@ -149,7 +155,8 @@ add_delete ()
 check      () { cli_check;  return $EXIT_CODE; }
 
 # Backups System and Configuration
-backup     () {
+backup     ()
+{
   printf "%-60b" "Please wait backing up $APP_BANNER"
   # wait for Background Processes to complete
   #wait
@@ -159,8 +166,9 @@ backup     () {
   return $EXIT_CODE
 }
 
-# Restore System and Configuration from Backup
-restore    () {
+# Restores System and Configuration from Backup
+restore    ()
+{
   printf "%-60b" "Please wait restoring $APP_BANNER"
   restore_from_backup; [ $EXIT_CODE -ge $EXIT_ALERT ] && printf " Error: $EXIT_CODE" || printf ".... $EXIT_MESSAGE"
   echo;echo;
@@ -172,7 +180,7 @@ unInstall  ()
 {
   EXIT_CODE=$EXIT_NORMAL
 
-  [ -z "$option2" ] && cli_select_category || selectedCategory=$option2
+  [ -z "$option2" ] && cli_select_category "Uninstall Menu" || selectedCategory=$option2
   case $selectedCategory in
        "$NONE") return $EXIT_CODE ;;
        *)       is_valid_category $selectedCategory
@@ -208,10 +216,41 @@ on      ()
   exit $EXIT_CODE
 }
 
-cleanup ()  { remove_remnants; clear_caches; return $EXIT_CODE; }
+cleanup ()
+{
+  remove_remnants;
+  clear_caches;
+  trap - $SIG_HUP $SIG_INT $SIG_QUIT $SIG_TERM EXIT
 
-synch   ()  { synch_net_filters;             return $EXIT_CODE; }
+  return $EXIT_CODE;
+}
 
+# Restores buckets
+synch      ()  { synch_net_filters;       return $EXIT_CODE; }
+
+# Restores buckets and firewall rules from saved state
+synch_all  ()  { synch_all_net_filters;   return $EXIT_CODE; }
+
+check_simultaneous_run ()
+{
+  declare -i ctr=0
+
+  while [ -f "$LOCK_FILE" ] && kill -0 $(cat "$LOCK_FILE") 2> /dev/null
+  do
+    printf "%-80b" "ALERT: $APP_BANNER another instance running. CTRL+C to Cancel. Waiting: $ctr ...."
+    printf "\b%.0s" {1..80}
+
+    [ $ctr -ge $WAIT_TIME ] && \
+    {
+      printf "%-80b" "ABORT: $APP_BANNER another instance still running. Waited Seconds: $WAIT_TIME ....     \n\n";
+      printf "\b%.0s" {1..80};
+      exit $EXIT_ABORT;
+    }
+    sleep 1; ctr+=1;
+  done
+}
+
+system_check; [ $EXIT_CODE -eq $EXIT_ABORT ] && exit $EXIT_CODE
 
 case $option1 in
      ?(-)?(-)help)         optHelp=$ON      ;;
@@ -226,21 +265,26 @@ case $option1 in
      ?(-)?(-)off)          optOff=$ON       ;;
      ?(-)?(-)on)           optOn=$ON        ;;
      ?(-)?(-)synch)        optSynch=$ON     ;;
+     ?(-)?(-)synch_all)    optSynchAll=$ON  ;;
      ?(-)?(-)un[iI]nstall) optUninstall=$ON ;;
      ?(-)?(-)version)      optVersion=$ON   ;;
      *) usage; echo -e "$RED"Invalid Option"$RESET"; echo; exit $EXIT_ALERT ;;
 esac
 
 
-clear_caches
-
 (( $optHelp ))        && help
 (( $optVersion ))     && version
 
-system_check;       [ $EXIT_CODE -eq $EXIT_ABORT ] && exit $EXIT_CODE
+trap cleanup $SIG_HUP $SIG_INT $SIG_QUIT $SIG_TERM EXIT
+
+clear_caches
+check_simultaneous_run
+echo $$ >> "$LOCK_FILE"
 
 printf "%-60b" "Option: $option1 $option2\n"
 printf "\b%.0s" {1..60}
+
+check_setup_config; [ $EXIT_CODE -eq $EXIT_ABORT ] && exit $EXIT_CODE
 
 (( $optOff ))         && off
 (( $optOn ))          && on
@@ -251,17 +295,24 @@ printf "\b%.0s" {1..60}
   exit $EXIT_ABORT;
 }
 
+# To support users who have not subscribed to any categories
+# Check is included here.
+# Users can use ipBLOCKer with minimal setup custon and white-list
+# till they decide which categories they want to subscribe to
+(( ! $optSynchAll )) && \
+{
+  check_setup_restore_buckets;
+  check_setup_restore_firewall;
+}
+
 (( $optSetup ))       && setup
 
-#categories_subscribed; [ $EXIT_CODE -eq $EXIT_NORMAL ] && \
-##{ system_setup;        [ $EXIT_CODE -eq $EXIT_ABORT ]  && exit $EXIT_CODE; }; || \
-##{ log "ERROR: $CATEGORIES_TAG file not found. Please run Setup ...."; };
 categories_subscribed
 if [ $EXIT_CODE -eq $EXIT_NORMAL ]
 then
   system_setup; [ $EXIT_CODE -eq $EXIT_ABORT ] && exit $EXIT_CODE
 else
-  log "ALERT: $CATEGORIES_TAG file not found. Select $CATEGORIES_TAG in Setup Menu ....";
+  log "ALERT: $CATEGORIES_TAG not selected. Select $CATEGORIES_TAG in Setup Menu ....";
 fi
 
 (( $optStatus ))      && status
@@ -272,10 +323,10 @@ fi
 (( $optBackup ))      && backup
 (( $optRestore ))     && restore
 (( $optSynch ))       && synch
+(( $optSynchAll ))    && synch_all
 (( $optUninstall ))   && unInstall
 
-cleanup
-
+#cleanup
 printf "\n"
 printf "\nOption: $option1 $option2 .... $EXIT_MESSAGE\n"
 

@@ -87,103 +87,6 @@ refresh_filters ()
    return $EXIT_CODE
 }
 
-refresh_filters_new ()
-{
-   local filterName="${1:-}" filterFile="" outputFile="" tempFile="" sortFile="" diffFile=""
-   local cidrOutputFile="" cidrTempFile="" cidrSortFile="" cidrDiffFile=""
-   declare -i downIps=0 ctr=0
-
-   filterFile="$DIR_FILTERS/$filterName$FILTER_FILE_EXT"
-   outputFile="$DIR_REFRESH/$filterName$REFRESH_FILE_EXT"
-   cidrOutputFile="$DIR_REFRESH/$filterName$CIDR_FILE_EXT"
-   tempFile="$outputFile$TEMP_FILE_EXT"
-   sortFile="$outputFile$SORT_FILE_EXT"
-   diffFile="$outputFile$DIFF_FILE_EXT"
-   cidrTempFile="$cidrOutputFile$TEMP_FILE_EXT"
-   cidrSortFile="$cidrOutputFile$SORT_FILE_EXT"
-   cidrDiffFile="$cidrOutputFile$DIFF_FILE_EXT"
-   EXIT_CODE=$EXIT_NORMAL
-
-   printf "%-40s %-10s" "Processing" ":: $filterName ::" | log
-
-   # CHECK FOR FILTER FILE UNLESS FILTER IS CUST OR WL
-   #case $filterName in
-   #  ! "$CUSTOM_TAG" | ! "$WHITE_LIST_TAG")
-   #
-   #esac
-
-   case $filterName in
-     "$SHALLA_TAG")
-        extract_categories_shalla $filterName
-        ;;
-     "$CUSTOM_TAG"|"$WHITE_LIST_TAG")
-        custom_or_white_list               $selectedCategory
-        ;;
-     *)
-        is_valid_category                  $selectedCategory
-        [ $EXIT_CODE -ne $EXIT_NORMAL ] && return $EXIT_CODE
-        refresh_filters_and_categories     $selectedCategory
-        custom_or_white_list               $WHITE_LIST_TAG
-        ;;
-   esac
-
-   if [ ! -f "$filterFile"  -a  $CUSTOM_PROC_ON -eq 0 ]
-   then
-      printf "ABORT: Refresh Filters File Not Found. Cannot continue ...." | log
-      touch "$diffFile" "$cidrDiffFile"
-      EXIT_CODE=$EXIT_ABORT
-      return $EXIT_CODE
-   fi
-
-   if [ $CUSTOM_PROC_ON -eq 0 ]
-   then
-     rm -rf $outputFile.* $cidrOutputFile.*
-     xargs -E END -n1 -a"$filterFile" curl $CURLOPT > "$tempFile"
-   else
-     # NOT Custom First Run. Subsequent Runs, extract custom data from ipset
-     if [ ! -f "$tempFile" ]
-     then
-       ctr=1
-       for letter in $(echo {a..z})
-       do
-         ctr+=1
-         ipset $LIST $BLOCK_APPLN_TAG"-""$filterName"$letter          2>/dev/null | grep -oE "$IP_PATTERN"    > "$tempFile"
-         ipset $LIST $BLOCK_APPLN_TAG"-""$filterName"$CIDR_TAG$letter 2>/dev/null | grep -oE "$CIDR_PATTERN" >> "$tempFile"
-         [ $ctr -gt $MAX_BUCKETS ] && break
-       done
-     fi
-   fi
-
-   printf "%-60s" "Please wait processing downloads ...."
-   printf "\b%.0s" {1..60}
-
-   # Check if the refreshed filter is a Shalla tar file
-   [ "$filterName" == "$SHALLA_TAG" ] && extract_categories_shalla $filterName
-
-   downIps=$(wc -l "$tempFile" 2> /dev/null | awk '{print $1}')
-   #printf "%-40s %-10s" "Total Downloaded IP's & CIDR's:" $downIps | log
-
-   if [ $EXIT_CODE -ne $EXIT_NORMAL -o $downIps -le 0 ]
-   then
-     printf "ALERT: Refreshed Filters Empty" | log
-     touch "$diffFile" "$cidrDiffFile";
-     return $EXIT_CODE;
-   fi
-
-   # Extract CIDR Ranges from refreshed file
-   grep -oE "$CIDR_PATTERN" "$tempFile" | grep -vE "$PVT_IP_PATTERN" | sort $SORT_IPS_OPT -o        "$cidrSortFile"
-
-   # Remove CIDR + LOCAL IP Ranges & Grab ONLY IP's from refreshed file
-   grep -vE "$CIDR_PATTERN" "$tempFile" | grep -oE "$IP_PATTERN"     | grep -vE "$PVT_IP_PATTERN" > "$sortFile"
-
-   # Compare and Split the refreshed with the present
-   compare_split "$outputFile"     $IP_TAG
-   compare_split "$cidrOutputFile" $CIDR_TAG
-
-   #log "END Refresh Filters: $filterFile"
-   return $EXIT_CODE
-}
-
 extract_categories_shalla ()
 {
   local filterName="${1:-}" outputFile="" tempFile="" shallaTempFile="" catName="" catList=""
@@ -461,6 +364,7 @@ refresh_buckets ()
 remove_remnants ()
 {
   local categoryName="" ipFile="" cidrFile=""
+  declare -i ctr=0 cnt=0
 
   EXIT_CODE=$EXIT_NORMAL
   for categoryName in $(cat "$CATEGORY_LIST" 2> /dev/null) $CUSTOM_TAG $WHITE_LIST_TAG
@@ -471,31 +375,45 @@ remove_remnants ()
     rm -rf   $ipFile$TEMP_FILE_EXT*   $ipFile$SORT_FILE_EXT*   $ipFile$DIFF_FILE_EXT*
     rm -rf $cidrFile$TEMP_FILE_EXT* $cidrFile$SORT_FILE_EXT* $cidrFile$DIFF_FILE_EXT*
   done
+
+  remove_lock_file_stales
   #echo;echo "Done"
   return $EXIT_CODE
 }
 
-# Synchronize ipsets and iptables
-synch_net_filters ()
+
+# remove stale pids from the lock file
+remove_lock_file_stales ()
 {
-  local categoryName="" tag=""
-  declare -a nfBuckets=()
+  declare -i ctr=0 cnt=0 elem=0
 
   EXIT_CODE=$EXIT_NORMAL
-  printf "%-60b" "Synch & Restore $APP_BANNER FireWall State" | log
+  [ ! -f "$LOCK_FILE" ] && return $EXIT_CODE
+  # Lock file exists even after hrs unusual!
+  # kill the process if any and remove the file
+  [ "$(find "$LOCK_FILE" -mmin +$LOCK_STALE_TIME 2> /dev/null)" ] && \
+  {
+    kill -$SIG_KILL $(cat "$LOCK_FILE") 2> /dev/null;
+    rm -rf "$LOCK_FILE";
+    return $EXIT_CODE;
+  }
 
-  nfBuckets=($(ipset $LIST | grep $BLOCK_APPLN_TAG | sort -u | awk {'print $2'}))
-  for categoryName in ${nfBuckets[@]-}
+  # Well it exists and is not 2 hrs older,
+  # remove stale Processes if any from file including self
+  for elem in $(cat "$LOCK_FILE" 2> /dev/null)
   do
-    [[ "$categoryName" == *"$CIDR_TAG"* ]] && { tag=$CIDR_TAG; } || { tag=$IP_TAG; }
-    [[ "$categoryName" == *"$WHITE_LIST_TAG"* ]] && WHITE_LIST_PROC=$ON || WHITE_LIST_PROC=$OFF
-    #printf "\nCategory: %-30s %-20s %-20s" $categoryName "tag: $tag" "WHITE_LIST_PROC: $WHITE_LIST_PROC"
-    create_net_filters $categoryName $tag > /dev/null 2>&1
+     EXIT_CODE=$EXIT_NORMAL
+     kill -0 $elem 2> /dev/null || EXIT_CODE=$EXIT_ERROR
+     [ $EXIT_CODE -eq $EXIT_ERROR -o $elem -eq $$ ] && \
+     { replace_config "$LOCK_FILE" "$elem" ""; }
   done
-  unset nfBuckets
-  WHITE_LIST_PROC=$OFF
+  EXIT_CODE=$EXIT_NORMAL
 
-  eval "${IPTABLES_SAVE_CMD}"
+  remove_blanks "$LOCK_FILE"
+
+  cnt=$(wc -l "$LOCK_FILE" 2> /dev/null | awk '{print $1}')
+  [ $cnt -le 0 ] && { rm -rf "$LOCK_FILE"; }
+
   return $EXIT_CODE
 }
 
@@ -664,6 +582,81 @@ refresh_filters_and_categories ()
    return $EXIT_CODE
 }
 
+check_setup_restore_buckets ()
+{
+  printf "%-80s" "Check $BUCKETS_TAG need to be restored ...."
+  printf "\b%.0s" {1..80}
+
+  declare -i bucketCnt=0 catgCnt=0
+  EXIT_CODE=$EXIT_NORMAL
+
+  #categories_subscribed; [ $EXIT_CODE -ne $EXIT_NORMAL ] && return $EXIT_CODE
+  bucketCnt=$(ipset -L 2> /dev/null | grep $BLOCK_APPLN_TAG | wc -l)
+  catgCnt=$(wc -l "$CATEGORY_LIST" 2> /dev/null | awk '{print $1}')
+
+  # if buckets count is less than category count, restore from saved state
+  [[ $bucketCnt -lt $catgCnt ]] && { synch_all_net_filters "$BUCKETS_TAG"; }
+
+  return $EXIT_CODE
+}
+
+check_setup_restore_firewall ()
+{
+  printf "%-80s" "Check $FIREWALL_TAG needs to be restored ...."
+  printf "\b%.0s" {1..80}
+
+  declare -i fwCnt=0 catgCnt=0
+  EXIT_CODE=$EXIT_NORMAL
+
+  #categories_subscribed; [ $EXIT_CODE -ne $EXIT_NORMAL ] && return $EXIT_CODE
+  fwCnt=$(iptables -L FORWARD 2> /dev/null | grep $BLOCK_APPLN_TAG | wc -l)
+  catgCnt=$(wc -l "$CATEGORY_LIST" 2> /dev/null | awk '{print $1}')
+
+  # if firewall count is less than category count, restore from saved state
+  [[ $fwCnt -lt $catgCnt ]] && { synch_all_net_filters "$FIREWALL_TAG"; }
+
+  return $EXIT_CODE
+}
+
+check_setup_config ()
+{
+  #log "START Check Config"
+
+  [ ! -f "$IPBLOCKER_CONFIG" ]    && touch "$IPBLOCKER_CONFIG" 2> /dev/null
+  [ ! -f "$IPBLOCKER_CONFIG" ]    && EXIT_CODE=$EXIT_ABORT
+  [ $EXIT_CODE -ne $EXIT_NORMAL ] && \
+  { printf "ABORT: Unable to Create $IPBLOCKER_CONFIG" | log; EXIT_CODE=$EXIT_ABORT; return $EXIT_CODE; }
+
+  EXIT_CODE=$EXIT_NORMAL
+
+  grep "IPBLOCKER_DIR" "$IPBLOCKER_CONFIG" > /dev/null 2>&1
+  if [ $? -ne $EXIT_NORMAL ]
+  then
+    printf "%-80s" "Creating file: $IPBLOCKER_CONFIG"
+    printf "\b%.0s" {1..80}
+
+    echo                                                         >> $IPBLOCKER_CONFIG
+    echo "export IPBLOCKER_DIR=$IPBLOCKER_DIR"                   >> $IPBLOCKER_CONFIG
+    echo "export PATH=/opt/bin:/usr/sbin:$IPBLOCKER_DIR:$PATH"   >> $IPBLOCKER_CONFIG
+    echo "export TEMP=/opt/tmp"                                  >> $IPBLOCKER_CONFIG
+    echo "export TMP=/opt/tmp"                                   >> $IPBLOCKER_CONFIG
+    echo "export TZ=$(cat /etc/TZ)"                              >> $IPBLOCKER_CONFIG
+    echo "export SHELL=/opt/bin/bash"                            >> $IPBLOCKER_CONFIG
+    echo "export BASH_ENV=$IPBLOCKER_CONFIG"                     >> $IPBLOCKER_CONFIG
+    echo "export BASH=/opt/bin/bash"                             >> $IPBLOCKER_CONFIG
+    echo "export LC_CTYPE=UTF-8"                                 >> $IPBLOCKER_CONFIG
+    echo "export IFS=$' \t\n'"                                   >> $IPBLOCKER_CONFIG
+    echo "export CHECK_MARK='\xE2\x9C\x93'"                      >> $IPBLOCKER_CONFIG
+    echo "#export CHECK_MARK='+'"                                >> $IPBLOCKER_CONFIG
+    echo                                                         >> $IPBLOCKER_CONFIG
+    echo "cd $IPBLOCKER_DIR"                                     >> $IPBLOCKER_CONFIG
+    chmod +x $IPBLOCKER_CONFIG
+  fi
+
+  #log "END Check Config"
+  return $EXIT_CODE
+}
+
 check_setup_filters ()
 {
   local outputFile="${1:-}"
@@ -743,45 +736,6 @@ check_setup_optional ()
   return $EXIT_CODE
 }
 
-check_setup_config ()
-{
-  #log "START Check Config"
-
-  [ ! -f "$IPBLOCKER_CONFIG" ]    && touch "$IPBLOCKER_CONFIG" 2> /dev/null
-  [ ! -f "$IPBLOCKER_CONFIG" ]    && EXIT_CODE=$EXIT_ABORT
-  [ $EXIT_CODE -ne $EXIT_NORMAL ] && \
-  { printf "ABORT: Unable to Create $IPBLOCKER_CONFIG" | log; return $EXIT_CODE; }
-
-  EXIT_CODE=$EXIT_NORMAL
-
-  grep "IPBLOCKER_DIR" $IPBLOCKER_CONFIG > /dev/null 2>&1
-  if [ $? -ne $EXIT_NORMAL ]
-  then
-    printf "%-80s" "Creating file: $IPBLOCKER_CONFIG"
-    printf "\b%.0s" {1..80}
-
-    echo                                                         >> $IPBLOCKER_CONFIG
-    echo "export IPBLOCKER_DIR=$IPBLOCKER_DIR"                   >> $IPBLOCKER_CONFIG
-    echo "export PATH=/opt/bin:/usr/sbin:$IPBLOCKER_DIR:$PATH"   >> $IPBLOCKER_CONFIG
-    echo "export TEMP=/opt/tmp"                                  >> $IPBLOCKER_CONFIG
-    echo "export TMP=/opt/tmp"                                   >> $IPBLOCKER_CONFIG
-    echo "export TZ=$(cat /etc/TZ)"                              >> $IPBLOCKER_CONFIG
-    echo "export SHELL=/opt/bin/bash"                            >> $IPBLOCKER_CONFIG
-    echo "export BASH_ENV=$IPBLOCKER_CONFIG"                     >> $IPBLOCKER_CONFIG
-    echo "export BASH=/opt/bin/bash"                             >> $IPBLOCKER_CONFIG
-    echo "export LC_CTYPE=UTF-8"                                 >> $IPBLOCKER_CONFIG
-    echo "export IFS=$' \t\n'"                                   >> $IPBLOCKER_CONFIG
-    echo "export CHECK_MARK='\xE2\x9C\x93'"                      >> $IPBLOCKER_CONFIG
-    echo "#export CHECK_MARK='+'"                                >> $IPBLOCKER_CONFIG
-    echo                                                         >> $IPBLOCKER_CONFIG
-    echo "cd $IPBLOCKER_DIR"                                     >> $IPBLOCKER_CONFIG
-    chmod 755 $IPBLOCKER_CONFIG
-  fi
-
-  #log "END Check Config"
-  return $EXIT_CODE
-}
-
 # Core Dependency Check to see if all required are available
 check_setup_refresh_schedule ()
 {
@@ -828,41 +782,23 @@ check_setup_fire_script ()
   printf "ERROR: Unable to TURN ON Firewall with Command: $FIREWALL_ENABLE_CMD Value: $FIREWALL_ENABLE_VALUE" | log
 
   EXIT_CODE=$EXIT_NORMAL
-  [ ! -f $FIRE_SCRIPT ]           && touch $FIRE_SCRIPT 2> /dev/null
-  [ ! -f $FIRE_SCRIPT ]           && EXIT_CODE=$EXIT_ERROR
+  [ ! -w $FIRE_SCRIPT ]           && touch $FIRE_SCRIPT 2> /dev/null
+  [ ! -w $FIRE_SCRIPT ]           && EXIT_CODE=$EXIT_ERROR
   [ $EXIT_CODE -ne $EXIT_NORMAL ] && \
   { printf "ERROR: Unable to Create/Update $FIRE_SCRIPT" | log; EXIT_CODE=$EXIT_ERROR; return $EXIT_CODE; }
 
-  grep $IPSET_SAVE_FILE $FIRE_SCRIPT > /dev/null 2>&1
+  grep $BLOCK_APPLN_TAG $FIRE_SCRIPT > /dev/null 2>&1
   if [ $? -ne $EXIT_NORMAL ]
   then
-    printf "%-80s" "Adding ipset restore to $FIRE_SCRIPT"
+    printf "%-80s" "Adding iptables and ipset saved state restore to $FIRE_SCRIPT"
     printf "\b%.0s" {1..80}
 
-    #TIME_NOW=$(date +"%Y%m%d-%H%M%S")
     cp $FIRE_SCRIPT $FIRE_SCRIPT"-"$(time_now)
 
-    echo -e                                                                          >> $FIRE_SCRIPT
-    echo -e "# ipBLOCKer: Restore ipset from backup. DO NOT CHANGE MANUALLY"         >> $FIRE_SCRIPT
-    echo -e "[ -f $IPSET_SAVE_FILE ]    && \\"                                       >> $FIRE_SCRIPT
-    echo -e "{ logger "$BLOCK_APPLN_TAG Restoring ipsets..."; $IPSET_RESTORE_CMD }"  >> $FIRE_SCRIPT
-    chmod 755 $FIRE_SCRIPT
-  fi
-
-  grep $IPTABLES_SAVE_FILE $FIRE_SCRIPT > /dev/null 2>&1
-  if [ $? -ne $EXIT_NORMAL ]
-  then
-    printf "%-80s" "Adding iptables restore to $FIRE_SCRIPT"
-    printf "\b%.0s" {1..80}
-
-    #TIME_NOW=$(date +"%Y%m%d-%H%M%S")
-    cp $FIRE_SCRIPT $FIRE_SCRIPT"-"$(time_now)
-
-    echo -e                                                                               >> $FIRE_SCRIPT
-    echo -e "# ipBLOCKer: Restore iptables from backup. DO NOT CHANGE MANUALLY"           >> $FIRE_SCRIPT
-    echo -e "[ -f $IPTABLES_SAVE_FILE ] && \\"                                            >> $FIRE_SCRIPT
-    echo -e "{ logger "$BLOCK_APPLN_TAG Restoring iptables..."; $IPTABLES_RESTORE_CMD }"  >> $FIRE_SCRIPT
-    chmod 755 $FIRE_SCRIPT
+    echo -e                                                                                    >> $FIRE_SCRIPT
+    echo -e "# ipBLOCKer: Restore from Saved State. CAUTION DO NOT CHANGE MANUALLY" >> $FIRE_SCRIPT
+    echo -e "[ -f "$IPBLOCKER_DIR/$BLOCK_APPLN_TAG.sh" ] && { $IPBLOCKER_DIR/$BLOCK_APPLN_TAG.sh synch_all; }"                                    >> $FIRE_SCRIPT
+    chmod +x $FIRE_SCRIPT
   fi
 
   #log "END Check Firewall Script"
@@ -993,7 +929,9 @@ system_setup ()
   [ -f "$outputFile3" ]                       && outputFile="$outputFile3"
 
   check_setup_optional $outputFile; sort $SORT_IPS_OPT "$outputFile" -o "$outputFile"
-  check_setup_config
+  #check_setup_config
+  #check_setup_restore_buckets
+  #check_setup_restore_firewall
   check_setup_refresh_schedule
   check_setup_fire_script
   check_setup_category_length
@@ -1002,7 +940,7 @@ system_setup ()
   # Turn on Logging if disable...not needed with custom chains
   #check_setup_syslog_packtype
 
-  printf "%-80s "
+  printf "%-80s"
   printf "\b%.0s" {1..80}
   #log "END Setup"
   return $EXIT_CODE
@@ -1264,14 +1202,14 @@ un_install  ()
   (( $cleanUpFolders )) && \
   {
     printf "\nRemoving firewall-start changes"                              | log;
-    replace_config "/jffs/scripts/firewall-start" "$BLOCK_APPLN_TAG|ipset.save|iptables.save" " ";
+    replace_config "$FIRE_SCRIPT" "$BLOCK_APPLN_TAG|ipset.save|iptables.save" "";
 
     printf "\nRemoving Scheduled Jobs"                                      | log;
     ( crontab -l 2> /dev/null | grep -wv "$BLOCK_APPLN_TAG" )  | crontab - || EXIT_CODE=$EXIT_ERROR;
 
     printf "\nRemoving profile changes"                                     | log;
-    replace_config "$HOME/.profile"      "IPBLOCKER_DIR" " ";
-    replace_config "$HOME/.bash_profile" "IPBLOCKER_DIR" " ";
+    replace_config "$HOME/.profile"      "IPBLOCKER_DIR" "";
+    replace_config "$HOME/.bash_profile" "IPBLOCKER_DIR" "";
 
     printf "\nRemoving $IPBLOCKER_CONFIG"                                   | log;
     rm -rf "$IPBLOCKER_CONFIG";
@@ -1336,7 +1274,7 @@ remove_net_filters ()
 
 clear_caches ()
 {
-  [ -e /proc/sys/vm/drop_caches ] && { sync; echo $CACHE_CLEAR_NORMAL > /proc/sys/vm/drop_caches; }
+  [ -w /proc/sys/vm/drop_caches ] && { sync; echo $CACHE_CLEAR_NORMAL > /proc/sys/vm/drop_caches; }
 }
 
 cli_select_category  ()
@@ -1344,6 +1282,8 @@ cli_select_category  ()
   local addFilters=""
   addFilters=$CUSTOM_TAG" "$WHITE_LIST_TAG; [ $SHOW_ALL -eq 1 ] && addFilters=$addFilters" "$ALL
   addFilters=$addFilters" "$NONE
+
+  clear;echo;echo -e "$APP_BANNER ""$UNDERLINED""${1:-}"$RESET"";echo;
 
   PS3="Enter Your Number Choice:"
   selectedCategory=""
@@ -1363,9 +1303,8 @@ prompt_confirm ()
 {
   local reply=""
 
-  while true
+  while  read -t$WAIT_TIME -r -n 1 -p "${1:-Are you Sure?} [y/n]: " reply
   do
-    read -r -n 1 -p "${1:-Are you Sure?} [y/n]: " reply
     case $reply in
       [yY]) echo ; return $EXIT_NORMAL            ;;
       [nN]) echo ; return $EXIT_ERROR             ;;
@@ -1380,11 +1319,11 @@ read_input ()
   ipArray=() fndIpArray=() cidrArray=() webArray=()
   declare -i iCtr=0 cCtr=0 wCtr=0
 
-  local tag="${1:-}" inputTimeOut=100
+  local tag="${1:-}"
   local prompt="Enter $tag Website, IP or CIDR values below. Press ENTER when Done.\nExample: www.somesite.com or 123.123.123.123 or 123.123.123.123/24\n"
 
   echo -e $prompt
-  while read -r line
+  while read -t$WAIT_TIME -r line
   do
       [[ $line ]] || break
 
@@ -1748,13 +1687,73 @@ save_net_filters ()
   #log "END save_net_filters"
 }
 
-restore_net_filters ()
+synch_all_net_filters ()
 {
-  #log "START restore_net_filters"
-  eval "${IPTABLES_RESTORE_CMD}"
-  eval "${IPSET_RESTORE_CMD}"
-  #log "END restore_net_filters"
+  #log "START synch_all_net_filters"
+  #touch fwc.txt
+  local netf="${1:-}" tag=""
+  declare -i fwFlag=0 bkFlag=0
+  EXIT_CODE=$EXIT_NORMAL
+
+  case $netf in
+    $FIREWALL_TAG) fwFlag=1;   ;;
+     $BUCKETS_TAG) bkFlag=1;   ;;
+                *) fwFlag=1; tag="$ALL"; bkFlag=1; ;;
+  esac
+
+  printf "%-80b" "Restore $APP_BANNER $tag saved state                 \n" #| log
+  printf "\b%.0s" {1..80}
+
+  (( $bkFlag )) && \
+  {
+    printf "%-80s" "Check $tag $BUCKETS_TAG have a saved state ...."      | log;
+    [ -f "$IPSET_SAVE_FILE" ]    && \
+    {
+      printf "%-80s" "Restoring $tag $BUCKETS_TAG from saved state ...."  | log;
+      eval "${IPSET_RESTORE_CMD}";
+      #(( ! $fwFlag )) && synch_net_filters;
+      #fwFlag=0;
+    }
+  }
+
+  (( $fwFlag )) && \
+  {
+    printf "%-80s" "Check $tag $FIREWALL_TAG has a saved state ...."      | log;
+    [ -f "$IPTABLES_SAVE_FILE" ] && \
+    {
+      printf "%-80s" "Restoring $tag $FIREWALL_TAG from saved state ...." | log;
+      eval "${IPTABLES_RESTORE_CMD}";
+    }
+  }
+
+  #log "END synch_all_net_filters"
+  return $EXIT_CODE
 }
+
+# Synchronize ipsets and iptables
+synch_net_filters ()
+{
+  local categoryName="" tag=""
+  declare -a nfBuckets=()
+
+  EXIT_CODE=$EXIT_NORMAL
+  printf "%-80b" "Synch & Restore $APP_BANNER FireWall State" | log
+
+  nfBuckets=($(ipset $LIST | grep $BLOCK_APPLN_TAG | sort -u | awk {'print $2'}))
+  for categoryName in ${nfBuckets[@]-}
+  do
+    [[ "$categoryName" == *"$CIDR_TAG"* ]]       && { tag=$CIDR_TAG; }  || { tag=$IP_TAG; }
+    [[ "$categoryName" == *"$WHITE_LIST_TAG"* ]] && WHITE_LIST_PROC=$ON || WHITE_LIST_PROC=$OFF
+    #printf "\nCategory: %-30s %-20s %-20s" $categoryName "tag: $tag" "WHITE_LIST_PROC: $WHITE_LIST_PROC"
+    create_net_filters $categoryName $tag > /dev/null 2>&1
+  done
+  unset nfBuckets
+  WHITE_LIST_PROC=$OFF
+
+  eval "${IPTABLES_SAVE_CMD}"
+  return $EXIT_CODE
+}
+
 
 remove_file1_from_file2 ()
 {
@@ -1921,7 +1920,7 @@ cli_read_directory ()
 {
   local lprompt="${1:-'Enter new location: '}" lvariable="${2:-}" line=""
 
-  while read -r -n 100 -p "$lprompt" line
+  while read -t$WAIT_TIME -r -n100 -p "$lprompt" line
   do
     [[ $line ]] || break
 
@@ -1945,14 +1944,14 @@ cli_read_number_between ()
   is_number $uppperValue; [ $? -ne $EXIT_NORMAL ] && \
   { echo "Invalid upper value: $uppperValue"; EXIT_CODE=$EXIT_ERROR; return $EXIT_CODE; }
 
-  while read -r -n 10 -p "$lprompt" line
+  while read -t$WAIT_TIME -r -n 10 -p "$lprompt" line
   do
     [[ $line ]] || break
 
     is_number $line; [ $? -ne $EXIT_NORMAL ] && \
     { echo -en "$RED"enter a number"$RESET"; continue; }
 
-    [ "$line" -ge "$lowerValue" -a "$line" -le "$uppperValue" 2> /dev/null ] && \
+    [ "$line" -ge "$lowerValue" -a "$line" -le "$uppperValue" ] && \
     { eval $lvariable=$line; break; } || \
     { echo -en "$RED"invalid value"$RESET"; }
   done
@@ -1977,8 +1976,9 @@ replace_config ()
 
   [ ! -f "$file" ] && { echo "Error: Not a File: $file";                       return $EXIT_ERROR; }
   [ -z "$search" ] && { echo "Error: Empty Search: $search Replace: $replace"; return $EXIT_ERROR; }
-  grep -Ev "$search" "$file" 2> /dev/null > "$file""$TEMP_FILE_EXT" && \
-  { echo "$replace" >> "$file""$TEMP_FILE_EXT"; mv "$file""$TEMP_FILE_EXT" "$file"; }
+  grep -Ev "$search" "$file" 2> /dev/null > "$file$TEMP_FILE_EXT"
+  echo "$replace" >> "$file$TEMP_FILE_EXT"
+  mv "$file$TEMP_FILE_EXT" "$file"
 
   return $EXIT_NORMAL
 }
@@ -2077,7 +2077,7 @@ menu_categories ()
 
   options=("${CATEGORY_LIST_ARRAY[@]-}")
 
-  while menu_categories_show "${1:-}" && read -r -p "$prompt" -n1 SELECTION && [[ -n "$SELECTION" ]]
+  while menu_categories_show "${1:-}" && read -t$WAIT_TIME -r -p "$prompt" -n1 SELECTION && [[ -n "$SELECTION" ]]
   do
     if [[ "$SELECTION" == *[[:digit:]]* && $SELECTION -ge 1 && $SELECTION -le ${#options[@]} ]]
     then

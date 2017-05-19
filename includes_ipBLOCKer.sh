@@ -7,7 +7,7 @@
 ################################################################################
 IPBLOCKER_DIR="${IPBLOCKER_DIR:-$PWD}"; IPBLOCKER_DIR="${IPBLOCKER_DIR%/}"
 
-VERSION="1.0"
+VERSION="1.1"
 
 # Location of the Program from which filters and refresh directory is derived
 # Make sure directory name does not contain any spaces
@@ -101,6 +101,7 @@ DISABLED_FILE_EXT=".on"
 TEMP_FILE_EXT=".temp"
 SORT_FILE_EXT=".sort"
 DIFF_FILE_EXT=".diff"
+LOCK_FILE_EXT=".lock"
 
 ####
 # Section: Configuring Filters and refreshes file names and locations
@@ -188,6 +189,24 @@ declare -i EXIT_ALERT=2
 declare -i EXIT_ABORT=3
 declare -i EXIT_CODE=$EXIT_NORMAL
 EXIT_MESSAGE="Done"
+
+SIG_HUP=1
+SIG_INT=2
+SIG_QUIT=3
+SIG_KILL=9
+SIG_TERM=15
+SIG_STOP=18
+
+LOCK_FILE="$IPBLOCKER_DIR"/"$BLOCK_APPLN_TAG$LOCK_FILE_EXT"
+
+# Wait in Seconds
+WAIT_TIME=300
+
+# Time in minutes
+LOCK_STALE_TIME=60
+
+# Maximum cli params supported by the system Currently
+MAX_PARAMS=2
 
 # Temporarily Turn On(1)/Off(0) ipBLOCKer for trouble-shooting
 declare -i IPBLOCKER_DISABLED=0
@@ -295,17 +314,20 @@ declare -a IPV6_MODULES=(
   "ip_set_hash_ip"
 )
 
+BUCKETS_TAG="buckets"
+FIREWALL_TAG="firewall"
+
 IPSET_SAVE="ipset $SAVE"
 IPTABLES_SAVE="iptables-save -c"
 
 IPSET_RESTORE="ipset $RESTORE"
 IPTABLES_RESTORE="iptables-restore -c"
 
-IPSET_SAVE_CMD="nice -n4       $IPSET_SAVE       > $IPSET_SAVE_FILE    &"
-IPTABLES_SAVE_CMD="nice -n4    $IPTABLES_SAVE    > $IPTABLES_SAVE_FILE &"
+IPSET_SAVE_CMD="$IPSET_SAVE             > $IPSET_SAVE_FILE    &"
+IPTABLES_SAVE_CMD="$IPTABLES_SAVE       > $IPTABLES_SAVE_FILE"
 
-IPSET_RESTORE_CMD="nice -n4    $IPSET_RESTORE    < $IPSET_SAVE_FILE    2> /dev/null &"
-IPTABLES_RESTORE_CMD="nice -n4 $IPTABLES_RESTORE < $IPTABLES_SAVE_FILE 2> /dev/null &"
+IPSET_RESTORE_CMD="$IPSET_RESTORE       < $IPSET_SAVE_FILE    2> /dev/null &"
+IPTABLES_RESTORE_CMD="$IPTABLES_RESTORE < $IPTABLES_SAVE_FILE 2> /dev/null"
 
 IPBLOCKER_OFF_CMD="grep -v $BLOCK_APPLN_TAG $IPTABLES_SAVE_FILE | $IPTABLES_RESTORE > /dev/null 2>&1 || EXIT_CODE=$EXIT_ALERT"
 
@@ -316,9 +338,6 @@ declare -i SHOW_ALL=1
 ####
 # Section: Seeding Cron Jobs default values
 ####
-CRON_JOB1="dropCaches"
-CRON_JOB2="refresh"$BLOCK_APPLN_TAG
-
 declare -A REFRESH_SCHEDULE=()
 REFRESH_SCHEDULE["$ADWARE_TAG"]="0 8 * * *"
 REFRESH_SCHEDULE["$COUNTRY_TAG"]="0 12 * * 3"
