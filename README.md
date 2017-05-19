@@ -7,6 +7,15 @@ Blocks IPs & CIDR's tagged as
 Adware Country Custom ETF
 Malware Shalla(exp) Spam
 Tor-Exits
+
+Current Version: 1.1
+See ChangeLog1_1.txt if upgrading 
+from Version 1.0
+
+Feedback, Suggestions or  
+ipBLOCKer on a different OS/Device 
+[Visit Forum](https://www.snbforums.com/threads/ipblocker-category-blocking-using-iptables-and-ipsets.39131/)
+
 ```
 #### :: Features ::
 ```
