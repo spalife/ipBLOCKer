@@ -1,0 +1,64 @@
+
+ipBLOCKer Version 1.1 ChangeLog
+
+Upgrade instructins:
+If you are upgrading ipBLOCKer from Version 1.0 to 1.1.
+Run the below command on Asuswrt-Merlin.
+cp /jffs/scripts/firewall-start /jffs/scripts/firewall-start.backup;
+cat /jffs/scripts/firewall-start | grep -Ev ipBLOCKEer > /jffs/scripts/firewall-start.temp
+mv /jffs/scripts/firewall-start.temp /jffs/scripts/firewall-start
+
+Installation Instructions:
+Refer to Download ipBLOCKer Instructions in Readme
+
+:: CHANGE LOG ::
+
+1.Reduced the dependency on firewalll-start.
+Now when ipBLOCKer is started manually or
+through a scheduled refresh, does a self check
+for missing buckets and firewall rules and restores
+them from available saved states which are autosaved
+by the system in refresh folder:
+refresh/iptables.save
+refresh/ipset.save
+
+2.User can also manually initiate the saved state restore
+even though system does it automatically.
+This is ONLY needed when the router has restarted
+or users have scheduled off/on through router admin.
+Now they can include a cron job to restore
+from saved state so that it times with their restarts.
+block synch_all
+or
+ipBLOCKer.sh synch_all
+
+3.Cleaning up of remnants improved
+
+4.Simulteanous run check implemented
+Now the system checks if another instance
+of ipBLOCKer is running either initiated by
+user or as a scheduled refresh and
+alerts the user.
+The user can wait for ipBLOCKer to free up
+or cancel his activity.
+If the user has choosen to wait he is automatically taken
+into ipBLOCKer when it becomes available.
+Wait time defaults to 5 mins.
+
+Menu input and confirm activities too auto timeout
+now after wait_time.
+
+Scenario:
+ie user starts an activity with ipBLOCKer
+and does not complete his activity.
+The system times out the activity per
+user initiated intent
+i.e., user was in
+block add white-list
+Enters a List of ips / cidrs / urls to white-list
+and does not confirm the activity
+If it is more than the wait_time,
+the system now assumes the original intent and
+times out with a yes confirm and completes the activity.
+
+5.Menu titles are now consistent across options
