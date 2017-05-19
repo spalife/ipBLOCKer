@@ -4,6 +4,10 @@ ipBLOCKer Version 1.1 ChangeLog
 Upgrade instructins:
 If you are upgrading ipBLOCKer from Version 1.0 to 1.1.
 Run the below command on Asuswrt-Merlin.
+block backup
+or
+ipBLOCKer.sh backup
+
 cp /jffs/scripts/firewall-start /jffs/scripts/firewall-start.backup;
 cat /jffs/scripts/firewall-start | grep -Ev ipBLOCKEer > /jffs/scripts/firewall-start.temp
 mv /jffs/scripts/firewall-start.temp /jffs/scripts/firewall-start
