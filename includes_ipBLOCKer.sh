@@ -7,7 +7,7 @@
 ################################################################################
 IPBLOCKER_DIR="${IPBLOCKER_DIR:-$PWD}"; IPBLOCKER_DIR="${IPBLOCKER_DIR%/}"
 
-VERSION="1.1"
+VERSION="1.2"
 
 # Location of the Program from which filters and refresh directory is derived
 # Make sure directory name does not contain any spaces
@@ -335,18 +335,28 @@ ALL="all"
 NONE="none"
 declare -i SHOW_ALL=1
 
+# Test values to check if bucket exists
+BUCKET_TEST_IP="192.168.1.1"
+BUCKET_TEST_CIDR="192.168.1.1/16"
+
+NO_FIND_TAG="Unknown|Invalid"
+
+
 ####
 # Section: Seeding Cron Jobs default values
 ####
+# For compatability with vixie's Cron
+# users should override this value in config file
+CRON_USER=""
 declare -A REFRESH_SCHEDULE=()
-REFRESH_SCHEDULE["$ADWARE_TAG"]="0 8 * * *"
-REFRESH_SCHEDULE["$COUNTRY_TAG"]="0 12 * * 3"
-REFRESH_SCHEDULE["$ETF_TAG"]="45 */8 * * *"
-REFRESH_SCHEDULE["$MALWARE_TAG"]="0 9 * * *"
-REFRESH_SCHEDULE["$SHALLA_TAG"]="30 9 * * *"
-REFRESH_SCHEDULE["$SPAM_TAG"]="0 10 * * *"
-REFRESH_SCHEDULE["$TOR_EXITS_TAG"]="30 10 * * *"
-REFRESH_SCHEDULE["$ALL"]="0 16 * * *"
+REFRESH_SCHEDULE["$ADWARE_TAG"]="0 8 * * * $CRON_USER"
+REFRESH_SCHEDULE["$COUNTRY_TAG"]="0 12 * * 3 $CRON_USER"
+REFRESH_SCHEDULE["$ETF_TAG"]="45 */8 * * * $CRON_USER"
+REFRESH_SCHEDULE["$MALWARE_TAG"]="0 9 * * * $CRON_USER"
+REFRESH_SCHEDULE["$SHALLA_TAG"]="30 9 * * * $CRON_USER"
+REFRESH_SCHEDULE["$SPAM_TAG"]="0 10 * * * $CRON_USER"
+REFRESH_SCHEDULE["$TOR_EXITS_TAG"]="30 10 * * * $CRON_USER"
+REFRESH_SCHEDULE["$ALL"]="0 16 * * * $CRON_USER"
 
 declare -i FIREWALL_ENABLE_VALUE=1
 FIREWALL_CHECK_CMD="nvram get fw_enable_x 2> /dev/null | grep -qwx $FIREWALL_ENABLE_VALUE"
@@ -387,7 +397,7 @@ declare -a PACKAGE_DEPENDS=(
    "bash"
    "diff"
    "grep"
-   "opkg"
+   "$PACKAGE_INSTALL_CMD"
    "sort"
    "split"
    "xargs"

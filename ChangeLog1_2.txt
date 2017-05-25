@@ -1,0 +1,17 @@
+
+ipBLOCKer Version 1.2 ChangeLog
+
+Upgrade instructins:
+If you are upgrading ipBLOCKer from Version 1.0 to 1.2.
+Run the below command on Asuswrt-Merlin.
+cp /jffs/scripts/firewall-start /jffs/scripts/firewall-start.backup;
+cat /jffs/scripts/firewall-start | grep -Ev ipBLOCKEer > /jffs/scripts/firewall-start.temp
+mv /jffs/scripts/firewall-start.temp /jffs/scripts/firewall-start
+
+Installation Instructions:
+Refer to Download ipBLOCKer Instructions in Readme
+
+:: CHANGE LOG ::
+
+1. Compatability fix for vixie's cron for $USER
+2. Fixed the bucket creation error for size zero

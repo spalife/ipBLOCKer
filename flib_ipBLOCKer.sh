@@ -5,11 +5,10 @@
 # CAUTION Advised.
 # Make changes through Menu's or through CLI
 ################################################################################
-
 ####
 # Refresh ipBLOCKer filters
 # Parameters Expected
-# $1 = ipBLOCKer Filter Name  ex: malware or malwareCIDR
+# $1 = ipBLOCKer Filter Name  ex: malware
 ####
 refresh_filters ()
 {
@@ -151,9 +150,6 @@ compare_split ()
    printf "%-60s" "Please wait estimating Incremental $REFRESH_TAG ...."
    printf "\b%.0s" {1..60}
 
-   #[ "$tag" == "$IP_TAG" ]   && { grabExpr=$IP_PATTERN;   }
-   #[ "$tag" == "$CIDR_TAG" ] && { grabExpr=$CIDR_PATTERN; }
-
    if [ $CUSTOM_PROC_ON -eq 0  -o  $firstRun -gt 0 ]
    then
       $DIFF_CMD_EXP "$outputFile" "$sortFile" | grep $DIFF_ADD_PATTERN | grep -oE $grabExpr > "$diffFile"
@@ -169,7 +165,6 @@ compare_split ()
 
    if [ $diffIps -gt $MAX_ENTRIES ]
    then
-      #log "SPLITING $tag's: $diffIps Exceed MAX_ENTRIES: $MAX_ENTRIES"
       printf "%-40s %-10s" "SPLITING $tag's Exceed MAX_ENTRIES:" "$diffIps gt $MAX_ENTRIES" | log
       split -a1 -l$MAX_ENTRIES "$diffFile" "$diffFile"
    fi
@@ -189,7 +184,6 @@ refresh_categories ()
 
   for tag in $IP_TAG $CIDR_TAG
   do
-    #log "START Refresh Categories: $categoryName tag: $tag"
     [ "$tag" == "$IP_TAG" ]   && { dExt=$REFRESH_FILE_EXT; }
     [ "$tag" == "$CIDR_TAG" ] && { dExt=$CIDR_FILE_EXT;    }
 
@@ -233,7 +227,6 @@ refresh_categories ()
   done
 
   [ -f "$errorFile" ] && sort $SORT_IPS_OPT "$errorFile" -o "$errorFile"
-  #save_net_filters
   #log "END Refresh Categories: $categoryName tag: $tag"
   return $EXIT_CODE
 }
@@ -278,15 +271,9 @@ refresh_buckets ()
   ctr=0
   for name in ${buckets[@]-}
   do
-    #printf "%-80s" "Fetching Sizes for: $name ctr: $ctr"
-    #printf "\b%.0s" {1..80}
-    #sizes=("${sizes[@]-}" "$(ipset $LIST $name 2> /dev/null | grep -oEc $grabExpr)");
     sizes[$ctr]=$(ipset $LIST $name 2> /dev/null | grep -oEc $grabExpr)
     ctr+=1
   done
-
-  #[ ${#buckets[@]} -gt 0 ] && { printf "\nBuckets Present:\n"; printf "%s\n" ${buckets[@]-}; }
-  #[ ${#sizes[@]} -gt 0 ]   && { printf "\nBucket Sizes:\n";    printf "%s\n" ${sizes[@]-}; }
 
   ctr=0
   for elem in $(cat "$ipsFile" 2> /dev/null)
@@ -294,22 +281,13 @@ refresh_buckets ()
     currentBucket="${buckets[$ctr]-}"
     printf "%-80s" "Added: $totalAdded Errored: $errored Tasked: $addIps"
 
-    #echo;echo "CURRENT $ctr Bucket: $currentBucket size: ${sizes[$ctr]-} added: $added totalAdded: $totalAdded errored: $errored Length: ${#buckets[$ctr]-}"
-    #[ $ctr -ge $MAX_BUCKETS ]                      && { echo;echo "break: MAX_BUCKETS         $ctr                            "; break; }
-    #[ $totalAdded -ge $addIps   ]                  && { echo;echo "break: totalAdded          $totalAdded                     "; break; }
-    #[ -z "$currentBucket" ]                        && { echo;echo "change bucket: BLANK                                       "; changeBucket=1; }
-    #[ ${#sizes[@]} -eq 0 ]                         && { echo;echo "change bucket: ZERO        ${#sizes[@]}                    "; changeBucket=1; }
-    #[[ ${sizes[$ctr]-}+$added -ge $MAX_ENTRIES ]]  && { echo;echo "change bucket: MAX_ENTRIES $added                          "; changeBucket=1; }
-
     [ -z "$currentBucket" ]                       && { changeBucket=1; }
     [[ ${sizes[$ctr]-}+$added -ge $MAX_ENTRIES ]] && { changeBucket=1; }
     [ $ctr -ge $MAX_BUCKETS ]                     && { break; }
     [ $totalAdded -ge $addIps ]                   && { break; }
-    #[ ${#sizes[@]} -eq 0 ]                        && { changeBucket=1; }
 
     (( changeBucket )) && \
     {
-      #echo;echo "FROM $ctr Bucket: ${buckets[$ctr]-} size: ${sizes[$ctr]-} added: $added";
       while true;
       do \
         changeBucket=0;added=0;
@@ -320,23 +298,17 @@ refresh_buckets ()
           [ $ctr -ge $MAX_BUCKETS ] && { break 2; };
           lCtr=0; ltr="";
           for letter in $(echo {a..z}); do ltr=$letter; lCtr+=1; [ $lCtr -gt $ctr ] && break; done;
-          #echo "AFTER nfCatg: $nfCatg$ltr";
-          #buckets=("${buckets[@]-}" "$nfCatg$ltr");
-          #sizes=("${sizes[@]-}" "$added");
           buckets[$ctr]=$nfCatg$ltr;
           sizes[$ctr]=$added;
           currentBucket="${buckets[$ctr]-}";
-          #echo "CREATED $ctr Bucket: ${buckets[$ctr]-} size: ${sizes[$ctr]-} added: $added";
           printf "\b%.0s" {1..80}
           create_net_filters $currentBucket $tag;
           [ $EXIT_CODE -ne $EXIT_NORMAL ] && { log "ERROR: Creating Bucket: $currentBucket"; continue; };
         };
-        #echo "TO $ctr currentBucket: $currentBucket Buckets: ${buckets[$ctr]-} size: ${sizes[$ctr]-} added: $added";
         [[ ${sizes[$ctr]-}+$added -ge $MAX_ENTRIES ]] && { continue; };
         break;
       done;
     };
-    #dummy+=1;
 
     ipset $ADD $currentBucket $elem > /dev/null 2>&1
     [ $? -eq $EXIT_NORMAL ]                                   && \
@@ -345,8 +317,6 @@ refresh_buckets ()
     printf "\b%.0s" {1..80}
 
   done
-  #printf "%-60s" "Added: $totalAdded Errored: $errored Tasked: $addIps"
-  #printf "\b%.0s" {1..80}
 
   clear_caches
 
@@ -377,10 +347,8 @@ remove_remnants ()
   done
 
   remove_lock_file_stales
-  #echo;echo "Done"
   return $EXIT_CODE
 }
-
 
 # remove stale pids from the lock file
 remove_lock_file_stales ()
@@ -424,10 +392,8 @@ create_net_filters ()
 {
   local netFilterName="${1:-}" tag="${2:-$IP_TAG}"
   local action=""   portsProto="" setType="" pattern=""
-  declare -i setSize=0
 
   #log "START Create Net Filter: $netFilterName for: $tag pattern: $pattern"
-
   [ -z "$netFilterName" ] && \
   { printf "ABORT: Empty FireWall Chain/Rule/Bucket Name. Cannot continue ...." | log;
     EXIT_CODE=$EXIT_ABORT; return $EXIT_CODE; }
@@ -454,18 +420,17 @@ create_net_filters ()
      iptables -A $netFilterName -j $action
   fi
 
-  # Check if set exists and its elements size. If Set Size=0. Set does not EXIST
-  setSize=$(ipset $LIST $netFilterName 2> /dev/null | grep -oEc $pattern)
-  if [ $setSize -le 0 ]
+  # Check if set exists by testing it with a test value
+  ipset $TEST $netFilterName $BUCKET_TEST_IP /dev/null 2>&1 | grep -Ewq "$NO_FIND_TAG"
+  if [ $? -eq $EXIT_NORMAL ]
   then
-    #log "CREATING Bucket: $netFilterName type: $tag"
     printf "%-40s %-10s" "CREATING $tag Bucket:" "$netFilterName"  #| log
     printf "\b%.0s" {1..60}
 
     ipset $CREATE $netFilterName $setType $OPTIONAL 2>/dev/null
     if [ $? -ne $EXIT_NORMAL ]
     then
-        log "ABORT: Creating Bucket: $netFilterName type: $tag"
+        printf "%-40s %-10s" "ABORT: CREATING $tag Bucket:" "$netFilterName" | log
         EXIT_CODE=$EXIT_ABORT
         return $EXIT_CODE
     fi
@@ -510,7 +475,6 @@ push_filter_to_top ()
   declare -i ctr=0
 
   #log "START Processing push_filter_to_top $filterName"
-
   (( ! PUSH_TO_TOP )) && return $EXIT_NORMAL
 
   ctr=1
@@ -590,7 +554,6 @@ check_setup_restore_buckets ()
   declare -i bucketCnt=0 catgCnt=0
   EXIT_CODE=$EXIT_NORMAL
 
-  #categories_subscribed; [ $EXIT_CODE -ne $EXIT_NORMAL ] && return $EXIT_CODE
   bucketCnt=$(ipset -L 2> /dev/null | grep $BLOCK_APPLN_TAG | wc -l)
   catgCnt=$(wc -l "$CATEGORY_LIST" 2> /dev/null | awk '{print $1}')
 
@@ -608,7 +571,6 @@ check_setup_restore_firewall ()
   declare -i fwCnt=0 catgCnt=0
   EXIT_CODE=$EXIT_NORMAL
 
-  #categories_subscribed; [ $EXIT_CODE -ne $EXIT_NORMAL ] && return $EXIT_CODE
   fwCnt=$(iptables -L FORWARD 2> /dev/null | grep $BLOCK_APPLN_TAG | wc -l)
   catgCnt=$(wc -l "$CATEGORY_LIST" 2> /dev/null | awk '{print $1}')
 
@@ -621,7 +583,6 @@ check_setup_restore_firewall ()
 check_setup_config ()
 {
   #log "START Check Config"
-
   [ ! -f "$IPBLOCKER_CONFIG" ]    && touch "$IPBLOCKER_CONFIG" 2> /dev/null
   [ ! -f "$IPBLOCKER_CONFIG" ]    && EXIT_CODE=$EXIT_ABORT
   [ $EXIT_CODE -ne $EXIT_NORMAL ] && \
@@ -691,7 +652,6 @@ check_setup_custom ()
     printf "\b%.0s" {1..80}
     printf "%s\n" ${contentArray[@]-} > "$outputFile"
     sort $SORT_IPS_OPT "$outputFile" -o "$outputFile"
-    #remove_blanks "$outputFile"
   fi
 
   #log "END Check Custom Setup $outputFile"
@@ -704,7 +664,6 @@ check_setup_optional ()
   EXIT_CODE=$EXIT_NORMAL
 
   #log "START Check Setup Misc"
-
   # Need to remove the entries of AWS/CLOUDFARE/GIT _CIDR_REFRESH from outputFile with diff
   [ $AWS_CIDR_WHITE_LIST       -eq 0  -a  -f "$AWS_CIDR_REFRESH" ]       && rm -rf "$AWS_CIDR_REFRESH"
   [ $CLOUDFARE_CIDR_WHITE_LIST -eq 0  -a  -f "$CLOUDFARE_CIDR_REFRESH" ] && rm -rf "$CLOUDFARE_CIDR_REFRESH"
@@ -748,7 +707,6 @@ check_setup_refresh_schedule ()
   do
     jobName=$BLOCK_APPLN_TAG"-"$REFRESH_TAG"-"$category
     jobSchedule=${REFRESH_SCHEDULE[$category]-}
-    #jobValue="$jobSchedule * * * . $IPBLOCKER_CONFIG; $IPBLOCKER_DIR/$prgName $REFRESH_TAG $category #$jobName#"
     jobValue="$jobSchedule . $IPBLOCKER_CONFIG; $IPBLOCKER_DIR/$prgName $REFRESH_TAG $category #$jobName#"
 
     [ "$(crontab -l 2> /dev/null | grep -w $jobName)" ] || \
@@ -769,7 +727,6 @@ check_setup_refresh_schedule ()
 check_setup_fire_script ()
 {
   #log "START Check Firewall Script"
-
   EXIT_CODE=$EXIT_NORMAL
   eval "${FIREWALL_CHECK_CMD}"
 
@@ -891,6 +848,7 @@ check_setup_syslog_packtype ()
   #log "END Checking syslog logging for Accept & Drop"
   return $EXIT_CODE
 }
+
 ####
 # System setup - create required directories/filters/files if not present
 ####
@@ -973,12 +931,10 @@ show_status_header ()
   echo -en ' '                                                           | log
   printf "$spaceUsage \t\t\t IPSet Version: $IPSET_VERSION"              | log
   printf "$STATUS_LINE_SEPERATOR_2%.0s" {1..70}                          | log
-  #echo -en ' '                                                          | log
 }
 
 show_status_body ()
 {
-  #printf "$STATUS_LINE_SEPERATOR_2%.0s" {1..70}                               | log
   printf "%30s %22s" "Total" "Total"                                                           | log
   printf "%-20s %-10s %-10s %-10s %-10s" "$CATEGORIES_TAG" "$IP_TAG" "Hits" "$CIDR_TAG" "Hits" | log
   printf "$STATUS_LINE_SEPERATOR_2%.0s" {1..70}                                                | log
@@ -999,7 +955,6 @@ show_status_body_content ()
   clear_caches
   for categoryName in ${nfBuckets[@]-}
   do
-    #echo;echo "categoryName: $categoryName";echo;
     if [[ "$categoryName" == *"$CIDR_TAG"* ]]
     then
       cidrCount+=$(ipset $LIST $categoryName 2> /dev/null | grep -oEc $CIDR_PATTERN)
@@ -1073,7 +1028,7 @@ system_check ()
     printf "%-40b" "\n$APP_BANNER Netfilters Check: "$RED"FAIL"$RESET"";
     printf "\nERROR: $IPSET_VERSION Unknown/Unavailable/Unsupported ipset module\n";
   }
-  #\ || { echo -e "ipset Check: "$GREEN"PASS"$RESET""; }
+  #\ || { echo -e "Netfilters Check: "$GREEN"PASS"$RESET""; }
   check_configuraton; [ $EXIT_CODE -ne $EXIT_NORMAL ] && \
   {
     failCtr+=1;
@@ -1138,7 +1093,6 @@ check_package_dependency ()
 check_net_filters ()
 {
   #log "START Check ipset modules"
-
   EXIT_CODE=$EXIT_NORMAL
   case $IPSET_VERSION in
     *v6)
@@ -1150,7 +1104,6 @@ check_net_filters ()
        modprobe -avs "${IPV4_MODULES[@]-}" || EXIT_CODE=$EXIT_ABORT
        ;;
     *)
-       #echo; echo "ERROR: Unknown/Unavailable/Unsupported ipset module" | log
        EXIT_CODE=$EXIT_ABORT
        ;;
   esac
@@ -1235,8 +1188,6 @@ remove_net_filters ()
   declare -i ctr=0
   EXIT_CODE=$EXIT_NORMAL
 
-  #log "START Remove ipBLOCKer $CATEGORIES_TAG : $category"
-
   printf "Removing: $category" | log
 
   ctr=1
@@ -1249,7 +1200,6 @@ remove_net_filters ()
     ipChainName=$ipDelSet
     cidrChainName=$cidrDelSet
 
-    #log "Deleting from ipset and iptables : $ipDelSet and $cidrDelSet"
     iptables -D FORWARD -m set $MATCH_SET $ipDelSet   src,dst -j $ipChainName   > /dev/null 2>&1
     iptables -D FORWARD -m set $MATCH_SET $cidrDelSet src,dst -j $cidrChainName > /dev/null 2>&1
 
@@ -1303,7 +1253,7 @@ prompt_confirm ()
 {
   local reply=""
 
-  while  read -t$WAIT_TIME -r -n 1 -p "${1:-Are you Sure?} [y/n]: " reply
+  while read -t$WAIT_TIME -r -n 1 -p "${1:-Are you Sure?} [y/n]: " reply
   do
     case $reply in
       [yY]) echo ; return $EXIT_NORMAL            ;;
@@ -1364,9 +1314,6 @@ find_ip ()
   EXIT_CODE=$EXIT_NORMAL fndIpArray=()
   for getIP in ${webArray[@]-}
   do
-    #tmpArray=()
-    #tmpArray=($(nslookup $getIP 2> /dev/null  | grep -oE $IP_PATTERN | grep -vE $PVT_IP_PATTERN | sort $SORT_IPS_OPT))
-    #[ "${#tmpArray[@]}" -gt 0 ] && fndIpArray=("${fndIpArray[@]-}" "${tmpArray[@]-}")
     fndIpArray[$ctr]=$(nslookup $getIP 2> /dev/null | grep -oE $IP_PATTERN | grep -vE $PVT_IP_PATTERN | sort $SORT_IPS_OPT)
     ctr+=1
   done
@@ -1455,11 +1402,6 @@ cli_create_add_del_diff ()
 {
   local file1="${1:-}" file2="${2:-}"
 
-#echo; echo "Lengths of ipArray: ${#ipArray[@]} fndIpArray: ${#fndIpArray[@]} cidrArray: ${#cidrArray[@]}"
-#echo
-#echo "file1: $file1"
-#echo "file2: $file2"
-
   # Create sort files from Global Arrays
   [ "${#ipArray[@]}" -eq 0 -a "${#fndIpArray[@]}" -eq 0 -a "${#cidrArray[@]}" -eq 0 ] && \
   { EXIT_CODE=$EXIT_ERROR; return $EXIT_CODE; }
@@ -1486,7 +1428,6 @@ cli_add_del_ip_cidr ()
   ipArray=() fndIpArray=() cidrArray=() webArray=()
 
   # Do we allow user to run without categories being setup?
-  #is_refresh_ready $categoryName; [ $EXIT_CODE -eq $EXIT_ABORT ] && return $EXIT_CODE
   cli_process_add_del_input $categoryName
   [ $EXIT_CODE -ne $EXIT_NORMAL ] && return $EXIT_CODE
 
@@ -1503,14 +1444,10 @@ cli_add_del_ip_cidr ()
     EXIT_CODE=$EXIT_NORMAL
     clear_caches
     refresh_categories            $categoryName
-
-    #remove_category_from_category $WHITE_LIST_TAG $categoryName
   else
     delete_elements_from_category $categoryName $sortFile $cidrSortFile "WL"
   fi
   rm -rf "$sortFile" "$cidrSortFile"
-
-  #echo;echo "Done";echo;
 
   return $EXIT_CODE
 }
@@ -1573,8 +1510,6 @@ cli_check ()
 
   check_ip_cidr_in_system
 
-  #echo;echo "Done";echo;
-
   return $EXIT_CODE
 }
 
@@ -1617,19 +1552,16 @@ delete_elements_from_category ()
    local lst="" addCatg=""
 
    #log "START Delete Elements from $categoryName"
-
    if [ "$categoryName" == "$ALL" ]
    then
      addCatg=$CUSTOM_TAG" "
      [ "$tag" != "NWL" ] && addFilters=$addCatg" "$WHITE_LIST_TAG
 
-     #echo;echo "delete_elements_from_category categoryName: $categoryName addCatg: $addCatg tag: $tag";echo;
      for lst in $(cat "$CATEGORY_LIST" 2> /dev/null) $addCatg
      do
        remove_elements_from_category $lst          $ipsFromFile $cidrsFromFile
      done
    else
-       #echo;echo "delete_elements_from_category categoryName: $categoryName";echo;
        remove_elements_from_category $categoryName $ipsFromFile $cidrsFromFile
    fi
 
@@ -1647,15 +1579,11 @@ remove_elements_from_category  ()
    ipRefreshFile="$DIR_REFRESH/$categoryName$REFRESH_FILE_EXT"
    cidrRefreshFile="$DIR_REFRESH/$categoryName$CIDR_FILE_EXT"
 
-   #log "START Removing Elements from $categoryName"
-   #echo; echo "ipRefreshFile: $ipRefreshFile cidrRefreshFile: $cidrRefreshFile";echo
-
    EXIT_CODE=$EXIT_NORMAL
 
    nfBuckets=($(ipset $LIST | grep $nfCatg | sort -u | awk {'print $2'}))
    for bucket in ${nfBuckets[@]-}
    do
-     #echo "remove_elements_from_category bucket: $bucket";
      if [[ "$bucket" == *"$CIDR_TAG"* ]]
      then
        xargs -E END -P$NUM_PROCS -I "PARAM" -n1 -a"$cidrsFromFile" ipset $DELETE $bucket PARAM > /dev/null 2>&1 || EXIT_CODE=$EXIT_ERROR
@@ -1674,7 +1602,6 @@ remove_elements_from_category  ()
    [ $cnt -gt 0 ] && printf "%-40s %-10s" "Removed from $categoryName $CIDR_TAG's:" $cnt | log
 
    clear_caches
-
    #log "END Removing Elements from $categoryName"
    return $EXIT_CODE
 }
@@ -1690,7 +1617,6 @@ save_net_filters ()
 synch_all_net_filters ()
 {
   #log "START synch_all_net_filters"
-  #touch fwc.txt
   local netf="${1:-}" tag=""
   declare -i fwFlag=0 bkFlag=0
   EXIT_CODE=$EXIT_NORMAL
@@ -1711,8 +1637,6 @@ synch_all_net_filters ()
     {
       printf "%-80s" "Restoring $tag $BUCKETS_TAG from saved state ...."  | log;
       eval "${IPSET_RESTORE_CMD}";
-      #(( ! $fwFlag )) && synch_net_filters;
-      #fwFlag=0;
     }
   }
 
@@ -1737,14 +1661,13 @@ synch_net_filters ()
   declare -a nfBuckets=()
 
   EXIT_CODE=$EXIT_NORMAL
-  printf "%-80b" "Synch & Restore $APP_BANNER FireWall State" | log
+  printf "%-80b" "Synch & Restore $APP_BANNER FireWall State" #| log
 
   nfBuckets=($(ipset $LIST | grep $BLOCK_APPLN_TAG | sort -u | awk {'print $2'}))
   for categoryName in ${nfBuckets[@]-}
   do
     [[ "$categoryName" == *"$CIDR_TAG"* ]]       && { tag=$CIDR_TAG; }  || { tag=$IP_TAG; }
     [[ "$categoryName" == *"$WHITE_LIST_TAG"* ]] && WHITE_LIST_PROC=$ON || WHITE_LIST_PROC=$OFF
-    #printf "\nCategory: %-30s %-20s %-20s" $categoryName "tag: $tag" "WHITE_LIST_PROC: $WHITE_LIST_PROC"
     create_net_filters $categoryName $tag > /dev/null 2>&1
   done
   unset nfBuckets
@@ -1816,7 +1739,6 @@ remove_category_from_category ()
   [ $EXIT_CODE -ne $EXIT_NORMAL ]      && return $EXIT_CODE
 
   delete_elements_from_category $fromCategory $sortFile $cidrSortFile "NWL"
-
   rm -rf "$sortFile" "$cidrSortFile"
 
   #log "Finished Removing $removeCategoryName from $CATEGORIES_TAG $removeFromCategoryName"
@@ -1829,14 +1751,11 @@ menu_setup ()
 
   COLUMNS=15
   PS3="$prompt"
-  #clear
-  #echo;
 
   clear;echo;echo -e "$APP_BANNER ""$UNDERLINED""${1:-}"$RESET"";echo;
 
   local options=(
     "Select Categories to Block"
-    #"Change Category Names"
     "Change Directory of $FILTERS_TAG"
     "Change Directory of $REFRESH_TAG"
     "Change Directory of $BACKUP_TAG"
@@ -1907,7 +1826,6 @@ menu_setup ()
               echo;echo "$opt to $_MAX_ENTRIES ....";echo;
               ;;
          *)
-              #echo; echo "Error Selected: $opt";echo;
               echo;echo -en "$RED"invalid choice"$RESET"
               ;;
     esac
@@ -2130,7 +2048,6 @@ menu_categories_selected ()
   # If its a fresh install turn on modified
   categories_subscribed; [ $EXIT_CODE -ne $EXIT_NORMAL ] && modified=1
 
-  #printf "%s\n" "${choices[@]}" | grep -Eqv "$off"
   # Check to see if any selection was made
   (( ! $modified )) && { return $EXIT_NORMAL; }
 

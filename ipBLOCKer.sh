@@ -115,12 +115,10 @@ refresh    ()
                 [ $EXIT_CODE -ne $EXIT_NORMAL ] && return $EXIT_CODE
                 refresh_filters_and_categories     $selectedCategory
                 custom_or_white_list               $WHITE_LIST_TAG
-                #remove_category_from_category $WHITE_LIST_TAG $selectedCategory
                 ;;
   esac
   save_net_filters
 
-  #printf "Refresh $EXIT_MESSAGE\n" | log
   return $EXIT_CODE
 }
 
@@ -128,7 +126,6 @@ refresh    ()
 custom_or_white_list    ()
 {
   refresh_custom_white_list "$1";
-  #remove_category_from_category $WHITE_LIST_TAG "$1"
   return $EXIT_CODE;
 }
 
