@@ -8,8 +8,8 @@ Adware Country Custom ETF
 Malware Shalla(exp) Spam
 Tor-Exits
 
-Current Version: 1.1
-See ChangeLog1_1.txt if upgrading 
+Current Version: 1.2
+See ChangeLog1_1.txt and ChangeLog1_2.txt if upgrading 
 from Version 1.0
 
 Feedback, Suggestions or  
